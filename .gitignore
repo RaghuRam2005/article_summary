@@ -1,0 +1,6 @@
+/env
+/.idea
+/flask_app/__pycache__/
+/flask_app/__init__.py
+/flask_app/.env
+.venv
