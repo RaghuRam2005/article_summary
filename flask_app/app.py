@@ -58,4 +58,4 @@ def is_same():
     return jsonify({'similar':check})
 
 if __name__ == '__main__':
-    app.run(host='localhost', port=5001, debug="enable")
+    app.run(host='localhost', port=5001)
