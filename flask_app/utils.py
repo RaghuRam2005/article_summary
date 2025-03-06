@@ -190,8 +190,7 @@ def generate_answer(content, query, history):
     else:
         history_prompt = None
     prompt = f"""Previous conversation:\n{history_prompt}\n\nSummarize this {content} in around 100 words,  
-    using the query {query}"""
-    print(len(prompt))
+    using the query {query} and history"""
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         answer = model.generate_content(prompt, 
