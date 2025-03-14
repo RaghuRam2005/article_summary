@@ -15,6 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 load_dotenv()
 GEMINI_API = os.getenv("GEMINI")
 genai.configure(api_key=GEMINI_API)
+print(GEMINI_API)
 
 def get_embeddings(query):
     """
@@ -135,7 +136,7 @@ def search_articles(query):
         except KeyboardInterrupt:
             break
             
-    return articles[:10]
+    return articles[:3]
 
 
 def scrape_article_content(url):
@@ -192,7 +193,7 @@ def generate_answer(content, query, history):
     prompt = f"""Previous conversation:\n{history_prompt}\n\nSummarize this {content} in around 100 words,  
     using the query {query} and history"""
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         answer = model.generate_content(prompt, 
                         generation_config=genai.GenerationConfig(
                             max_output_tokens=200,
