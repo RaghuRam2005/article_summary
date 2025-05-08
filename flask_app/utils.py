@@ -14,6 +14,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Load API keys from environment variables
 load_dotenv()
 GEMINI_API = os.getenv("GEMINI")
+if GEMINI_API:
+    print("yes")
+else:
+    print("None")
 genai.configure(api_key=GEMINI_API)
 print(GEMINI_API)
 
@@ -196,7 +200,6 @@ def generate_answer(content, query, history):
         model = genai.GenerativeModel("gemini-2.0-flash")
         answer = model.generate_content(prompt, 
                         generation_config=genai.GenerationConfig(
-                            max_output_tokens=200,
                             top_p=0.8,
                             temperature=0.5
                         )
