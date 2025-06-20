@@ -5,3 +5,4 @@
 /flask_app/.env
 .venv
 /flask_app/model
+.env
