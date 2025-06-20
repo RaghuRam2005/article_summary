@@ -6,3 +6,4 @@
 .venv
 /flask_app/model
 .env
+test*
