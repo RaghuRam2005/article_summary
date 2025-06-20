@@ -1,83 +1,85 @@
 import streamlit as st
 import requests
-import numpy as np
+import os
 
-st.title("LLM bases article search")
+BACKEND_URL = os.getenv("BACKEND_URL")
 
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.title("Keyword Search 🔍")
 
-# Load chat history into chat
-for message in st.session_state.messages:
-    with st.chat_message('user'):
-        st.markdown(message['user'])
-    with st.chat_message('assistant'):
-        st.markdown(message['assistant'])
+st.markdown(
+    """
+    Enter a keyword or phrase to generate a concise summary from relevant articles using advanced Retrieval Augmented Generation (RAG) and Gemini API.
 
-# Input for user query
-query = st.chat_input("what do you want?")
+    - **Tip:** Try specific topics (e.g., "quantum computing", "renewable energy trends").
+    - Summaries are generated in real-time based on the latest available content.
+    """
+)
 
-if len(str(query)) > 50:
-    st.warning("Query length limit exceeded!")
+with st.sidebar:
+    st.header("Login or Signup")
+    tab1, tab2 = st.tabs(["Login", "Signup"])
 
-if query:
+    with tab1:
+        st.text_input(
+            label="Username", 
+            placeholder="Enter the username", 
+            key="login_user"
+        )
+        st.text_input(
+            label="Password", 
+            placeholder="Enter the password", 
+            type="password", 
+            key="login_pass"
+        )
+
+    with tab2:
+        st.text_input(
+            label="Username", 
+            placeholder="Enter the username", 
+            key="signup_user"
+        )
+        st.text_input(
+            label="Password", 
+            placeholder="Enter the password", 
+            type="password", 
+            key="signup_pass"
+        )
+        st.text_input(
+            label="Confirm Password", 
+            label_visibility="collapsed", 
+            placeholder="Re-enter the password", 
+            type="password", 
+            key="signup_confirm_pass"
+        )
+
+
+
+input_keyword = st.text_input("Enter the keyword you want to know about")
+if input_keyword and len(input_keyword.strip()) < 3:
+    st.warning("Please enter a more descriptive keyword (at least 3 characters).")
+
+response = None
+
+if st.button("Summarize", type="primary") and input_keyword:
     try:
-        history = st.session_state.messages[-2:]['history']
-    except Exception:
-        history = []
-
-    # Make a POST request to the Flask API
-    with st.chat_message("user"):
-        st.markdown(query)
-    
-    payload = {
-        "query" : query
-    }
-
-    embed_url = "http://localhost:5001/embed"
-    embeddings = requests.post(embed_url, json=payload)
-    embeddings = np.array(embeddings.json()['embedding'])
-
-    is_similar = False
-    ans_index = None
-    check_url = "http://localhost:5001/check"
-
-    for index in range(len(st.session_state.messages)):
-        query_embed = {'embedding':st.session_state.messages[index]['embed'].tolist(), 'query':embeddings.tolist()}
-        check = requests.post(check_url, json=query_embed)
-        check = check.json()
-
-        if check['similar']:
-            is_similar=True
-            ans_index = index
-            break
-        else:
-            continue
-    
-    if is_similar:
-        answer = st.session_state.messages[ans_index]['assistant']
-    else:
-        payload = {
-            'query':query,
-            'history':history
+        data = {
+            "keyword" : input_keyword
         }
-        flask_url = "http://localhost:5001/query"
-        response = requests.post(flask_url, json=payload)
-        if response.status_code == 200:
-            answer = response.json()['answer']
+        response = requests.post(url=f"{BACKEND_URL}/KEYWORD", json=data)
+    except Exception:
+        st.warning(
+        """
+        An Exception occured while posting data
+        """
+        )
+        response = None
+
+if response:
+    try:
+        data = response.json()
+        if not data or 'summary' not in data:
+            st.warning("No summary data received.")
         else:
-            answer = response.json()['answer']
-        history = query
-        st.session_state.messages.append({
-            'user':query,
-            'assistant': answer,
-            'history' : history,
-            'embed':embeddings
-        })
-
-
-    with st.chat_message('assistant'):
-        st.markdown(answer)
-
-    
+            st.markdown(data['summary'])
+    except Exception as e:
+        st.warning("Invalid format from the server")
