@@ -187,91 +187,88 @@ def display_summary(summary_data: Dict[Any, Any]) -> None:
         logger.error(f"Error in display_summary: {str(e)}")
 
 
-def render_authentication_sidebar() -> None:
+def render_sidebar() -> None:
     """
-    Render the authentication sidebar with login and signup forms.
+    Render the sidebar.
     
     Note: This is a UI placeholder for future authentication implementation.
     The actual authentication logic would need to be implemented with a proper
-    backend authentication system.
-    """
+    #backend authentication system.
+    #"""
+    #with st.sidebar:
+    #    st.header("🔐 Authentication")
+    #    
+    #    # Create tabs for login and signup
+    #    tab1, tab2 = st.tabs(["🔑 Login", "📝 Signup"])
+#
+    #    with tab1:
+    #        st.subheader("Login to Your Account")
+    #        
+    #        login_username = st.text_input(
+    #            label="Username", 
+    #            placeholder="Enter your username", 
+    #            key="login_user",
+    #            help="Enter your registered username"
+    #        )
+    #        
+    #        login_password = st.text_input(
+    #            label="Password", 
+    #            placeholder="Enter your password", 
+    #            type="password", 
+    #            key="login_pass",
+    #            help="Enter your account password"
+    #        )
+    #        
+    #        if st.button("🔓 Login", key="login_btn", type="primary"):
+    #            if login_username and login_password:
+    #                # Placeholder for actual authentication logic
+    #                st.success(f"Welcome back, {login_username}! (Demo mode)")
+    #                st.balloons()
+    #            else:
+    #                st.error("Please fill in both username and password.")
+#
+    #    with tab2:
+    #        st.subheader("Create New Account")
+    #        
+    #        signup_username = st.text_input(
+    #            label="Username", 
+    #            placeholder="Choose a username", 
+    #            key="signup_user",
+    #            help="Choose a unique username (3+ characters)"
+    #        )
+    #        
+    #        signup_password = st.text_input(
+    #            label="Password", 
+    #            placeholder="Create a password", 
+    #            type="password", 
+    #            key="signup_pass",
+    #            help="Password should be at least 8 characters"
+    #        )
+    #        
+    #        signup_confirm_pass = st.text_input(
+    #            label="Confirm Password", 
+    #            label_visibility="collapsed", 
+    #            placeholder="Confirm your password", 
+    #            type="password", 
+    #            key="signup_confirm_pass",
+    #            help="Re-enter your password to confirm"
+    #        )
+    #        
+    #        if st.button("📝 Sign Up", key="signup_btn", type="primary"):
+    #            # Basic validation for demo
+    #            if not all([signup_username, signup_password, signup_confirm_pass]):
+    #                st.error("Please fill in all fields.")
+    #            elif len(signup_username) < 3:
+    #                st.error("Username must be at least 3 characters long.")
+    #            elif len(signup_password) < 8:
+    #                st.error("Password must be at least 8 characters long.")
+    #            elif signup_password != signup_confirm_pass:
+    #                st.error("Passwords do not match.")
+    #            else:
+    #                # Placeholder for actual signup logic
+    #                st.success(f"Account created for {signup_username}! (Demo mode)")
+    #                st.balloons()
     with st.sidebar:
-        st.header("🔐 Authentication")
-        st.info("Note: Authentication is currently for UI demonstration only.")
-        
-        # Create tabs for login and signup
-        tab1, tab2 = st.tabs(["🔑 Login", "📝 Signup"])
-
-        with tab1:
-            st.subheader("Login to Your Account")
-            
-            login_username = st.text_input(
-                label="Username", 
-                placeholder="Enter your username", 
-                key="login_user",
-                help="Enter your registered username"
-            )
-            
-            login_password = st.text_input(
-                label="Password", 
-                placeholder="Enter your password", 
-                type="password", 
-                key="login_pass",
-                help="Enter your account password"
-            )
-            
-            if st.button("🔓 Login", key="login_btn", type="primary"):
-                if login_username and login_password:
-                    # Placeholder for actual authentication logic
-                    st.success(f"Welcome back, {login_username}! (Demo mode)")
-                    st.balloons()
-                else:
-                    st.error("Please fill in both username and password.")
-
-        with tab2:
-            st.subheader("Create New Account")
-            
-            signup_username = st.text_input(
-                label="Username", 
-                placeholder="Choose a username", 
-                key="signup_user",
-                help="Choose a unique username (3+ characters)"
-            )
-            
-            signup_password = st.text_input(
-                label="Password", 
-                placeholder="Create a password", 
-                type="password", 
-                key="signup_pass",
-                help="Password should be at least 8 characters"
-            )
-            
-            signup_confirm_pass = st.text_input(
-                label="Confirm Password", 
-                label_visibility="collapsed", 
-                placeholder="Confirm your password", 
-                type="password", 
-                key="signup_confirm_pass",
-                help="Re-enter your password to confirm"
-            )
-            
-            if st.button("📝 Sign Up", key="signup_btn", type="primary"):
-                # Basic validation for demo
-                if not all([signup_username, signup_password, signup_confirm_pass]):
-                    st.error("Please fill in all fields.")
-                elif len(signup_username) < 3:
-                    st.error("Username must be at least 3 characters long.")
-                elif len(signup_password) < 8:
-                    st.error("Password must be at least 8 characters long.")
-                elif signup_password != signup_confirm_pass:
-                    st.error("Passwords do not match.")
-                else:
-                    # Placeholder for actual signup logic
-                    st.success(f"Account created for {signup_username}! (Demo mode)")
-                    st.balloons()
-
-        # Add divider and app info
-        st.divider()
         st.markdown("### 📊 App Info")
         st.info(f"🌐 Backend: {BACKEND_URL}")
         
@@ -306,8 +303,8 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded",
         menu_items={
-            'Get Help': 'https://github.com/your-repo/rag-app',
-            'Report a bug': 'https://github.com/your-repo/rag-app/issues',
+            'Get Help': 'https://github.com/RaghuRam2005/article_summary',
+            'Report a bug': 'https://github.com/RaghuRam2005/article_summary/issues',
             'About': "RAG-powered keyword summarization using AI"
         }
     )
@@ -317,20 +314,15 @@ def main():
     # Main title with emoji and styling
     st.title("🔍 Keyword Search & Summarization")
     
-    # Subtitle and description
+    # Subtitle and description (Markdown version)
     st.markdown(
         """
-        <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
-            <h3 style="color: #1f77b4; margin-top: 0;">🤖 AI-Powered Knowledge Discovery</h3>
-            <p style="margin-bottom: 0;">
-                Enter a keyword or phrase to generate a comprehensive summary using advanced 
-                <strong>Retrieval Augmented Generation (RAG)</strong> technology powered by Google's Gemini AI.
-            </p>
-        </div>
-        """, 
-        unsafe_allow_html=True
+        ##### 🤖 AI-Powered Knowledge Discovery
+
+        Enter a keyword or phrase to generate a comprehensive summary using advanced 
+        **Retrieval Augmented Generation (RAG)** technology powered by Google's Gemini AI.
+        """
     )
-    
     # Tips and usage guidelines
     with st.expander("💡 Usage Tips & Examples", expanded=False):
         col1, col2 = st.columns(2)
@@ -353,9 +345,9 @@ def main():
             - "blockchain technology"
             """)
     
-    # =================== AUTHENTICATION SIDEBAR ===================
+    # =================== SIDEBAR ===================
     
-    render_authentication_sidebar()
+    render_sidebar()
     
     # =================== MAIN CONTENT AREA ===================
     
@@ -384,7 +376,7 @@ def main():
     
     with col2:
         # Action button section
-        st.subheader("🚀 Action")
+        st.subheader("")
         
         # Main summarize button
         summarize_clicked = st.button(
@@ -432,57 +424,10 @@ def main():
             else:
                 st.warning("⚠️ No summary was generated. Please try a different keyword.")
         # If api_response is None, error was already displayed in make_api_request
-    
-    # =================== FOOTER SECTION ===================
-    
-    st.divider()
-    
-    # Footer with additional information
-    footer_col1, footer_col2, footer_col3 = st.columns(3)
-    
-    with footer_col1:
-        st.markdown("""
-        **🔧 Technical Stack:**
-        - Frontend: Streamlit
-        - Backend: Flask + Python
-        - AI: Google Gemini API
-        - Sources: Wikipedia, DuckDuckGo
-        """)
-    
-    with footer_col2:
-        st.markdown("""
-        **📊 Features:**
-        - Real-time summarization
-        - Multiple data sources
-        - Error handling
-        - Responsive design
-        """)
-    
-    with footer_col3:
-        st.markdown("""
-        **🚀 Version 1.0.0**
-        - RAG-powered summaries
-        - User authentication UI
-        - Health monitoring
-        - Enhanced error handling
-        """)
-
 
 # =================== APPLICATION ENTRY POINT ===================
 
 if __name__ == "__main__":
-    """
-    Application entry point.
-    
-    Environment Variables:
-    - BACKEND_URL: URL of the Flask backend API (default: http://localhost:5000)
-    
-    Usage:
-        streamlit run app.py
-        
-    Development:
-        streamlit run app.py --server.runOnSave true
-    """
     try:
         logger.info("Starting Streamlit RAG Frontend Application")
         logger.info(f"Backend URL: {BACKEND_URL}")
