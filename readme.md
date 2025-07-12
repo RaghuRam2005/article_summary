@@ -4,7 +4,7 @@
 ## Overview
 
 This project is designed to take a keyword from user like artificial Intelligence, cryptography, etc. It will search various
-content based on the keyword and summarizes the content for the user. 
+content based on the keyword and summarizes the content for the user.
 
 ## Setup Instructions
 
@@ -24,11 +24,11 @@ cd article_summary
 
 Generate a Gemini API key using the [AI Studio](https://aistudio.google.com/apikey) website.
 
-###### Note: This may incur some charges, so please review your API usage and billing details on the AI Studio dashboard.
+### Note: This may incur some charges, so please review your API usage and billing details on the AI Studio dashboard
 
 Create a `.env` file in `flask_app` folder and paste your API key there
 
-```
+```bash
 GEMINI_API = <your API key>
 ```
 
@@ -40,15 +40,7 @@ Install the required libraries using the command
 pip install -r requirements.txt
 ```
 
-### Step 4: Setting up the backend URL:
-
-create a `.env` file in the `streamlit_app` folder and paste the flask app URL here
-
-```
-BACKEND_URL = http://localhost:5000/
-```
-
-### Step 4: running the application
+### Step 3: running the application
 
 Now in `article_summmary` folder run the following commands to start and run the Application
 
@@ -61,7 +53,8 @@ python ./flask_app/app.py
 **In Terminal 2:**
 
 ```bash
-streamlit run ./streamlit/app.py
+npm install
+npm run dev
 ```
 
 ### Step 4: Open the Application
