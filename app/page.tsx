@@ -1,12 +1,12 @@
 "use client"
 import {Field, Fieldset, Input, Label, Button } from '@headlessui/react'
 import clsx from 'clsx'
-import { Cover } from './components/cover';
-import { BackgroundBeams } from './components/background';
+import { Cover } from '@/app/components/cover';
+import { BackgroundBeams } from '@/app/components/background';
 import React, { useState, useEffect } from 'react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, User } from 'firebase/auth';
 import { X, Loader2, User as UserIcon} from 'lucide-react';
-import { auth } from '@/firebase/config';
+import { auth } from '@/app/firebase/config';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react'
 
 
