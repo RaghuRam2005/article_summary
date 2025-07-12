@@ -12,6 +12,7 @@ Dependencies: flask, python-dotenv, google-genai, requests, beautifulsoup4
 """
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask application
 app = Flask(__name__)
+CORS(app)
 
 # Load environment variables from .env file
 load_dotenv()
