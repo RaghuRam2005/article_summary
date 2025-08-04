@@ -45,3 +45,8 @@ __pycache__
 
 # firebase 
 app/firebase/
+
+# virtual environment files
+env/
+venv/
+.venv/
