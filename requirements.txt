@@ -2,3 +2,6 @@ python-dotenv==1.1.0
 flask==3.1.1
 requests==2.32.4
 google-genai==1.21.1
+newspaper3k==0.2.8
+trafilatura==2.0.0
+flask-cors==6.0.1
