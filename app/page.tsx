@@ -5,13 +5,11 @@ import { Cover } from '@/app/components/cover';
 import { BackgroundBeams } from '@/app/components/background';
 import React, { useState, useEffect, Fragment } from 'react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut, User, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { auth, db } from '@/app/firebase/config';
+import { auth, db, BackendUrl } from '@/app/firebase/config';
 import { collection, addDoc, query, onSnapshot, deleteDoc, doc, orderBy } from 'firebase/firestore';
 import { X, Loader2, User as UserIcon, LogOut, Trash2, Send, History, KeyRound, Mail, Menu, SidebarClose } from 'lucide-react';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react';
 
-// Backend url
-const BackendUrl = "http://127.0.0.1:5000/"
 
 // --- AUTH PAGES ---
 
