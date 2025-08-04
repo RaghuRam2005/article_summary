@@ -7,7 +7,7 @@ This application provides a REST API endpoint for generating summaries from vari
 - Direct text content
 
 Author: RaghuRam2005
-Version: 2.0.0
+Version: 2.1.0
 Dependencies: flask, python-dotenv, google-genai, requests, beautifulsoup4
 """
 
@@ -20,6 +20,8 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import re
+import newspaper
+import trafilatura
 import logging
 from typing import Optional, Dict, Any, Union
 
@@ -46,42 +48,158 @@ if not GEMINI_API:
 client = genai.Client(api_key=GEMINI_API)
 
 
-def clean_data(text: str) -> str:
+class ContentExtractor:
     """
-    Clean and normalize text data by removing unwanted characters and formatting.
-    
-    ## Enhancement: This function is updated to remove common Markdown syntax.
+    Content Extractor using multiple libraries
     """
-    if not text or not isinstance(text, str):
-        logger.debug("Invalid text input provided to clean_data")
-        return ""
-    
-    try:
-        # Remove HTML tags
-        text = re.sub(r'<[^>]+>', '', text)
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
+        logger.info("ContentExtractor initialized successfully")
 
-        # Remove headers (e.g., #, ##, ###)
-        text = re.sub(r'^\s*#+\s*', '', text, flags=re.MULTILINE)
-        # Remove emphasis (e.g., *, **, _, __)
-        text = re.sub(r'(\*|_){1,2}(.*?)\1{1,2}', r'\2', text)
-        # Remove list items (e.g., * item, - item)
-        text = re.sub(r'^\s*[\*\-]\s+', '', text, flags=re.MULTILINE)
+    def extract_with_newspaper(self, url: str) -> Dict[str, Any]:
+        """Extract content using newspaper3k library."""
+        try:
+            article = newspaper.Article(url)
+            article.download()
+            article.parse()
+            
+            return {
+                'title': article.title or '',
+                'text': article.text or '',
+                'authors': article.authors or [],
+                'publish_date': str(article.publish_date) if article.publish_date else '',
+                'summary': article.summary or '',
+                'keywords': article.keywords or [],
+                'meta_keywords': article.meta_keywords or [],
+                'meta_description': article.meta_description or '',
+                'top_image': article.top_image or '',
+                'images': list(article.images) or [],
+                'movies': list(article.movies) or [],
+                'source_url': url
+            }
+        except Exception as e:
+            logger.error(f"Newspaper extraction failed for {url}: {str(e)}")
+            return {}
+
+    def extract_with_trafilatura(self, url: str) -> Dict[str, Any]:
+        """Extract content using trafilatura library."""
+        try:
+            downloaded = trafilatura.fetch_url(url)
+            if not downloaded:
+                return {}
+            
+            # Extract main content
+            text = trafilatura.extract(downloaded)
+            
+            # Extract metadata
+            metadata = trafilatura.extract_metadata(downloaded)
+            
+            return {
+                'title': metadata.title if metadata and metadata.title else '',
+                'text': text or '',
+                'author': metadata.author if metadata and metadata.author else '',
+                'date': metadata.date if metadata and metadata.date else '',
+                'description': metadata.description if metadata and metadata.description else '',
+                'sitename': metadata.sitename if metadata and metadata.sitename else '',
+                'source_url': url
+            }
+        except Exception as e:
+            logger.error(f"Trafilatura extraction failed for {url}: {str(e)}")
+            return {}
+
+    def extract_with_beautifulsoup(self, url: str) -> Dict[str, Any]:
+        """Fallback extraction using BeautifulSoup with enhanced selectors."""
+        try:
+            response = self.session.get(url, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Remove unwanted elements
+            for element in soup(['script', 'style', 'nav', 'header', 'footer', 'sidebar', 'aside', 'advertisement']):
+                element.decompose()
+
+            # Extract title
+            title = ''
+            title_tag = soup.find('title')
+            if title_tag:
+                title = title_tag.get_text().strip()
+            
+            # Try multiple selectors for main content
+            content_selectors = [
+                'article',
+                '[role="main"]',
+                '.main-content',
+                '.content',
+                '.post-content',
+                '.entry-content',
+                '#content',
+                '.article-body',
+                '.story-body'
+            ]
+            
+            main_content = ''
+            for selector in content_selectors:
+                content_elem = soup.select_one(selector)
+                if content_elem:
+                    main_content = content_elem.get_text()
+                    break
+            
+            # Fallback to all paragraphs if no main content found
+            if not main_content:
+                paragraphs = soup.find_all('p')
+                main_content = '\n'.join([p.get_text() for p in paragraphs])
+
+            # Extract meta description
+            meta_desc = ''
+            meta_tag = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', attrs={'property': 'og:description'})
+            if meta_tag:
+                meta_desc = meta_tag.get('content', '')
+
+            return {
+                'title': title,
+                'text': main_content,
+                'description': meta_desc,
+                'source_url': url
+            }
+            
+        except Exception as e:
+            logger.error(f"BeautifulSoup extraction failed for {url}: {str(e)}")
+            return {}
+
+    def extract_content(self, url: str) -> Dict[str, Any]:
+        """Extract content using multiple methods with fallbacks."""
+        logger.info(f"Extracting content from: {url}")
         
-        # Keep only alphanumeric characters, spaces, and basic punctuation
-        text = re.sub(r'[^a-zA-Z0-9\s.,!?\-\'\n]', '', text)
+        # Try newspaper3k first (best for articles)
+        content = self.extract_with_newspaper(url)
+        if content.get('text') and len(content['text'].strip()) > 100:
+            logger.info("Successfully extracted content using newspaper3k")
+            return content
         
-        # Normalize whitespace
-        text = re.sub(r'\s+', ' ', text)
+        # Try trafilatura as fallback
+        content = self.extract_with_trafilatura(url)
+        if content.get('text') and len(content['text'].strip()) > 100:
+            logger.info("Successfully extracted content using trafilatura")
+            return content
         
-        # Strip leading/trailing whitespace
-        text = text.strip()
+        # Use BeautifulSoup as final fallback
+        content = self.extract_with_beautifulsoup(url)
+        if content.get('text') and len(content['text'].strip()) > 50:
+            logger.info("Successfully extracted content using BeautifulSoup")
+            return content
         
-        logger.debug(f"Text cleaned successfully, length: {len(text)}")
-        return text
+        # If all methods fail but we have title/description, return that
+        if content.get('title') or content.get('description'):
+            logger.warning(f"Limited content extracted for {url}, using title/description")
+            fallback_text = f"Title: {content.get('title', 'N/A')}\nDescription: {content.get('description', 'N/A')}"
+            content['text'] = fallback_text
+            return content
         
-    except Exception as e:
-        logger.error(f"Error cleaning text: {str(e)}")
-        return ""
+        logger.error(f"Failed to extract meaningful content from {url}")
+        return {}
 
 
 class RAGProcessor:
@@ -91,57 +209,8 @@ class RAGProcessor:
     """
     
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'RAG-Processor/2.0 (Educational Purpose)'
-        })
+        self.content_extractor = ContentExtractor()
         logger.info("RAGProcessor initialized successfully")
-
-    ## Method to scrape content from the url
-    def scrape_url_content(self, url: str, timeout: int = 15) -> Optional[str]:
-        """
-        Scrape the main textual content from a given URL.
-        
-        Args:
-            url (str): The URL to scrape.
-            timeout (int, optional): Request timeout in seconds. Defaults to 15.
-            
-        Returns:
-            Optional[str]: The extracted text content, or None on failure.
-        """
-        try:
-            logger.info(f"Scraping content from URL: {url}")
-            response = self.session.get(url, timeout=timeout)
-            response.raise_for_status()
-
-            # Use BeautifulSoup to parse the HTML
-            soup = BeautifulSoup(response.content, 'html.parser')
-
-            # Remove script and style elements
-            for script_or_style in soup(['script', 'style']):
-                script_or_style.decompose()
-
-            # Get text from common article tags, prioritize <article>
-            if soup.article:
-                text = soup.article.get_text()
-            else:
-                # Fallback to a combination of other common tags
-                tags = soup.find_all(['p', 'h1', 'h2', 'h3'])
-                text = '\n'.join(tag.get_text() for tag in tags)
-
-            if not text:
-                # If no text found with specific tags, get all visible text
-                text = soup.get_text()
-
-            logger.info(f"Successfully scraped content, length: {len(text)}")
-            return text
-
-        except requests.RequestException as e:
-            logger.error(f"HTTP error during URL scraping for {url}: {str(e)}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error during URL scraping for {url}: {str(e)}")
-            return None
 
     def search_wikipedia(self, keyword: str, timeout: int = 10) -> Optional[str]:
         """Search Wikipedia for content related to the given keyword."""
@@ -173,104 +242,157 @@ class RAGProcessor:
             logger.error(f"Error during Wikipedia search: {str(e)}")
             return None
 
-    def search_duckduckgo_instant(self, keyword: str, timeout: int = 10) -> Optional[Dict[str, str]]:
+    def search_duckduckgo_instant(self, keyword: str, timeout: int = 10) -> Optional[Dict[str, Any]]:
         """Search DuckDuckGo Instant Answer API."""
         try:
             logger.info(f"Searching DuckDuckGo for keyword: {keyword}")
             url = "https://api.duckduckgo.com/"
-            params = {'q': keyword, 'format': 'json', 'no_redirect': '1', 'no_html': '1'}
-            response = self.session.get(url, params=params, timeout=timeout)
+            params = {
+                'q': keyword, 
+                'format': 'json', 
+                'no_redirect': '1', 
+                'no_html': '1'
+            }
+            
+            session = requests.Session()
+            response = session.get(url, params=params, timeout=timeout)
             response.raise_for_status()
             data = response.json()
+            
+            # Check for abstract
             if data.get('Abstract'):
-                return {'title': data.get('Heading', keyword), 'extract': data.get('Abstract', ''), 'source': data.get('AbstractSource', 'DuckDuckGo')}
+                return {
+                    'title': data.get('Heading', keyword),
+                    'text': data.get('Abstract', ''),
+                    'source_url': data.get('AbstractURL', ''),
+                    'source_name': data.get('AbstractSource', 'DuckDuckGo'),
+                    'description': f"Information about {keyword}"
+                }
+            
+            # Check for definition
             if data.get('Definition'):
-                return {'title': keyword, 'extract': data.get('Definition', ''), 'source': data.get('DefinitionSource', 'DuckDuckGo')}
+                return {
+                    'title': keyword,
+                    'text': data.get('Definition', ''),
+                    'source_url': data.get('DefinitionURL', ''),
+                    'source_name': data.get('DefinitionSource', 'DuckDuckGo'),
+                    'description': f"Definition of {keyword}"
+                }
+            
             logger.warning(f"No relevant content found in DuckDuckGo for: {keyword}")
             return None
+            
         except Exception as e:
             logger.error(f"Error during DuckDuckGo search: {str(e)}")
             return None
-
-    def _get_content_from_keyword(self, keyword: str) -> str:
-        """Helper to retrieve content by searching a keyword."""
-        raw_content = ""
+    
+    def get_content_from_keyword(self, keyword: str) -> Optional[Dict[str, Any]]:
+        """Retrieve content by searching a keyword."""
         # Try Wikipedia first
-        raw_content = self.search_wikipedia(keyword)
+        content = self.search_wikipedia(keyword)
+        if content:
+            return content
+        
         # Fallback to DuckDuckGo
-        if not raw_content:
-            ddg_result = self.search_duckduckgo_instant(keyword)
-            if ddg_result:
-                raw_content = ddg_result.get('extract', '')
-        return raw_content or ""
-
-    def generate_summary(self, source_text: str, topic_hint: str) -> str:
+        content = self.search_duckduckgo_instant(keyword)
+        return content
+    
+    def get_content_from_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """Extract content from URL."""
+        return self.content_extractor.extract_content(url)
+    
+    def generate_enhanced_summary(self, content_data: Dict[str, Any], query_hint: str, content_type: str) -> str:
         """
-        Generates an AI summary for the given text.
-
-        ## Enhancement: This method now focuses only on AI generation with an improved prompt.
+        Generate markdown summary with sources using AI.
         
         Args:
-            source_text (str): The text content to be summarized.
-            topic_hint (str): A hint about the topic (e.g., the keyword or URL).
-
-        Returns:
-            str: The generated summary or a fallback message.
-        """
-        cleaned_content = clean_data(source_text)
+            content_data: Dictionary containing extracted content and metadata
+            query_hint: The original query (keyword, URL, or content hint)
+            content_type: Type of content ('keyword', 'url', 'content')
         
-        if not cleaned_content or len(cleaned_content.strip()) < 50:
-            logger.warning(f"Content for '{topic_hint}' is too short after cleaning.")
-            return f"Sorry, the provided content for '{topic_hint}' was not substantial enough to summarize."
-
+        Returns:
+            Markdown formatted summary with sources
+        """
         try:
-            logger.info(f"Generating AI summary for topic: {topic_hint}")
-            prompt = f"""Summarize the following content about '{topic_hint}'.
-            Provide a clear, professional, and concise summary in well-structured plain text.
-            Do not use any markdown formatting (like *, #, or lists).
-            Focus on the key facts and main points. The summary should be 2-3 paragraphs long, around 500 words (don't exceede this limit).
+            # Prepare content for AI processing
+            main_text = content_data.get('text', '')
+            title = content_data.get('title', '')
+            description = content_data.get('description', '')
+            source_url = content_data.get('source_url', '')
+            source_name = content_data.get('source_name', 'Unknown Source')
+            
+            # If we have very little content, generate based on title and description
+            if len(main_text.strip()) < 100:
+                if title or description:
+                    logger.info(f"Generating summary from limited content for: {query_hint}")
+                    limited_content = f"Title: {title}\nDescription: {description}"
+                    main_text = limited_content
+                else:
+                    return f"**Unable to generate summary**\n\nInsufficient content available for '{query_hint}'. Please try a different source or provide more detailed information."
 
-            Content to summarize:
-            ---
-            {cleaned_content}
-            ---
-            """
+            # Prompt for gemini API
+            prompt = f"""You are an expert content analyst. Create a comprehensive, well-structured summary in markdown format.
+
+**Query:** {query_hint}
+**Content Type:** {content_type}
+**Source:** {source_name}
+
+**Instructions:**
+1. Create a detailed, informative summary (aim for 800-1200 words)
+2. Use proper markdown formatting with headers, lists, and emphasis
+3. Structure the content with clear sections using ## headers
+4. Include key facts, important details, and main points
+5. Add a "Sources" section at the end with proper citations
+6. Make it engaging and comprehensive like a Perplexity AI response
+7. If the content is limited, use your knowledge to expand on the topic while clearly indicating what comes from the source vs general knowledge
+
+**Content to analyze:**
+---
+Title: {title}
+Description: {description}
+Main Content: {main_text[:4000]}  # Limit to avoid token overflow
+---
+
+Please provide a thorough, markdown-formatted summary:"""
+
+            logger.info(f"Generating enhanced AI summary for: {query_hint}")
             
             response = client.models.generate_content(
                 model="gemini-2.0-flash-exp",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    max_output_tokens=500,
                     temperature=0.3,
                 )
             )
             
             if response and hasattr(response, 'text') and response.text:
-                summary = clean_data(response.text)
-                if summary:
-                    logger.info(f"Successfully generated summary for: {topic_hint}")
-                    return summary
+                summary = response.text.strip()
+                
+                # Add source information if not already included
+                if source_url and "## Sources" not in summary and "## References" not in summary:
+                    summary += f"\n\n## Sources\n\n- [{source_name}]({source_url})"
+                elif source_name and not source_url:
+                    summary += f"\n\n## Sources\n\n- {source_name}"
+                
+                logger.info(f"Successfully generated enhanced summary for: {query_hint}")
+                return summary
             
-            logger.warning("AI generated an empty or invalid summary.")
-            # Fallback if AI fails
-            return cleaned_content
-
+            logger.warning("AI generated empty response")
+            return f"**Summary Generation Error**\n\nUnable to generate summary for '{query_hint}'. Please try again."
+            
         except Exception as e:
-            logger.error(f"Error generating summary with AI model: {str(e)}")
-            return "An error occurred while generating the summary. Please try again later."
+            logger.error(f"Error generating enhanced summary: {str(e)}")
+            return f"**Error**\n\nAn error occurred while generating the summary for '{query_hint}': {str(e)}"
 
 
 # Initialize the RAG processor instance
 rag_processor = RAGProcessor()
 
 
-## Routes to handle the post requests
 @app.route("/summarize", methods=['POST'])
 def summarize_content():
     """
-    REST API endpoint to generate summaries from a keyword, URL, or direct content.
-    
-    The endpoint prioritizes input in the following order: content > url > keyword.
+    Enhanced REST API endpoint to generate comprehensive markdown summaries with sources.
     
     Request Format (provide ONE of the keys):
         {
@@ -281,8 +403,14 @@ def summarize_content():
     
     Response Format:
         {
-            "summary": "AI-generated summary text",
-            "source": "type of input (e.g., 'direct content', 'https://...')"
+            "summary": "Markdown-formatted comprehensive summary with sources",
+            "source": "source information",
+            "content_type": "direct content|url|keyword",
+            "metadata": {
+                "title": "extracted title",
+                "source_url": "source URL if applicable",
+                "word_count": "approximate word count"
+            },
             "status": "success"
         }
     """
@@ -291,53 +419,83 @@ def summarize_content():
         if not data:
             return jsonify({"error": "No JSON data provided", "status": "error"}), 400
 
-        content_to_summarize = ""
+        content_data = None
         source_identifier = ""
+        content_type = ""
 
         # 1. Prioritize direct content
         if 'content' in data and isinstance(data['content'], str) and data['content'].strip():
-            content_to_summarize = data['content']
+            text_content = data['content'].strip()
+            content_data = {
+                'text': text_content,
+                'title': 'Direct Content',
+                'description': 'User-provided content',
+                'source_name': 'Direct Input',
+                'source_url': ''
+            }
             source_identifier = "direct content"
+            content_type = "content"
             logger.info("Processing request with direct content.")
 
-        # 2. Else, check for URL
+        # 2. Check for URL
         elif 'url' in data and isinstance(data['url'], str) and data['url'].strip():
-            url = data['url']
+            url = data['url'].strip()
+            
             # Basic URL validation
             if not re.match(r'^https?://', url):
                 return jsonify({"error": "Invalid URL format provided", "status": "error"}), 400
             
+            content_data = rag_processor.get_content_from_url(url)
+            if not content_data:
+                return jsonify({
+                    "error": f"Failed to extract content from URL: {url}",
+                    "status": "error"
+                }), 400
+            
             source_identifier = url
-            content_to_summarize = rag_processor.scrape_url_content(url)
-            if not content_to_summarize:
-                return jsonify({"error": f"Failed to retrieve content from URL: {url}", "status": "error"}), 400
+            content_type = "url"
             logger.info(f"Processing request with URL: {url}")
 
-        # 3. Else, fall back to keyword
+        # 3. Fall back to keyword
         elif 'keyword' in data and isinstance(data['keyword'], str) and data['keyword'].strip():
             keyword = data['keyword'].strip()
+            
             if len(keyword) > 200:
                 return jsonify({"error": "Keyword is too long (max 200 chars)", "status": "error"}), 400
             
+            content_data = rag_processor.get_content_from_keyword(keyword)
+            if not content_data:
+                return jsonify({
+                    "error": f"Could not find any information for the keyword: '{keyword}'",
+                    "status": "error"
+                }), 404
+            
             source_identifier = keyword
-            content_to_summarize = rag_processor._get_content_from_keyword(keyword)
-            if not content_to_summarize:
-                 return jsonify({"error": f"Could not find any information for the keyword: '{keyword}'", "status": "error"}), 404
+            content_type = "keyword"
             logger.info(f"Processing request with keyword: {keyword}")
 
-        # If no valid input was found
         else:
             return jsonify({
                 "error": "Request must contain a non-empty 'content', 'url', or 'keyword' field.",
                 "status": "error"
             }), 400
 
-        # Generate summary from the obtained content
-        summary = rag_processor.generate_summary(content_to_summarize, source_identifier)
+        # Generate comprehensive markdown summary
+        summary = rag_processor.generate_enhanced_summary(content_data, source_identifier, content_type)
+        
+        # Prepare metadata
+        metadata = {
+            "title": content_data.get('title', ''),
+            "source_url": content_data.get('source_url', ''),
+            "source_name": content_data.get('source_name', ''),
+            "word_count": len(summary.split()) if summary else 0
+        }
         
         response_data = {
-            "source": source_identifier,
             "summary": summary,
+            "source": source_identifier,
+            "content_type": content_type,
+            "metadata": metadata,
             "status": "success"
         }
         
@@ -353,8 +511,15 @@ def health_check():
     """Health check endpoint to verify API availability."""
     return jsonify({
         "status": "healthy",
-        "service": "RAG Content Summarizer",
-        "version": "2.0.0"
+        "service": "Enhanced RAG Content Summarizer",
+        "version": "3.0.0",
+        "features": [
+            "Enhanced content extraction",
+            "Markdown formatted summaries",
+            "Source citations",
+            "Multiple extraction methods",
+            "Comprehensive AI summaries"
+        ]
     }), 200
 
 
@@ -375,9 +540,15 @@ def method_not_allowed(error):
 
 
 if __name__ == "__main__":
-    logger.info("Starting Flask RAG Application v2.0.0")
+    logger.info("Starting Enhanced Flask RAG Application v3.0.0")
+    logger.info("New features:")
+    logger.info("  - Enhanced content extraction with multiple methods")
+    logger.info("  - Comprehensive markdown summaries")
+    logger.info("  - Source citations like Perplexity")
+    logger.info("  - Improved handling of limited content")
+    logger.info("  - No token limits for full summaries")
     logger.info("Available endpoints:")
-    logger.info("  POST /summarize - Generate summary from keyword, URL, or content")
+    logger.info("  POST /summarize - Generate comprehensive summary with sources")
     logger.info("  GET /health - Health check")
     
     app.run(
