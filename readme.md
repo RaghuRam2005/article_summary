@@ -41,7 +41,7 @@ GEMINI_API = <your API key>
 
 ### Step 3: running the application
 
-Now in `article_summmary` folder run the following commands to start and run the Application (UV automatically installed python requirements)
+Now in `article_summmary` folder run the following commands to start and run the Application (UV automatically installs python requirements)
 
 **In Terminal 1:**
 
