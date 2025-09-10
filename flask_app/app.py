@@ -60,7 +60,15 @@ class ContentExtractor:
         logger.info("ContentExtractor initialized successfully")
 
     def extract_with_newspaper(self, url: str) -> Dict[str, Any]:
-        """Extract content using newspaper3k library."""
+        """
+        extracts content from the URL (works with news sites)
+
+        Args:
+            url (str): URL we need to scrape
+
+        Returns:
+            Dict[str, Any]: scraped content
+        """
         try:
             article = newspaper.Article(url)
             article.download()
@@ -69,15 +77,7 @@ class ContentExtractor:
             return {
                 'title': article.title or '',
                 'text': article.text or '',
-                'authors': article.authors or [],
-                'publish_date': str(article.publish_date) if article.publish_date else '',
-                'summary': article.summary or '',
                 'keywords': article.keywords or [],
-                'meta_keywords': article.meta_keywords or [],
-                'meta_description': article.meta_description or '',
-                'top_image': article.top_image or '',
-                'images': list(article.images) or [],
-                'movies': list(article.movies) or [],
                 'source_url': url
             }
         except Exception as e:
@@ -85,7 +85,15 @@ class ContentExtractor:
             return {}
 
     def extract_with_trafilatura(self, url: str) -> Dict[str, Any]:
-        """Extract content using trafilatura library."""
+        """
+        extract content from URL
+
+        Args:
+            url (str): URL we need to scrape
+
+        Returns:
+            Dict[str, Any]: scraped content
+        """
         try:
             downloaded = trafilatura.fetch_url(url)
             if not downloaded:
@@ -100,10 +108,7 @@ class ContentExtractor:
             return {
                 'title': metadata.title if metadata and metadata.title else '',
                 'text': text or '',
-                'author': metadata.author if metadata and metadata.author else '',
-                'date': metadata.date if metadata and metadata.date else '',
                 'description': metadata.description if metadata and metadata.description else '',
-                'sitename': metadata.sitename if metadata and metadata.sitename else '',
                 'source_url': url
             }
         except Exception as e:
@@ -358,7 +363,7 @@ Please provide a thorough, markdown-formatted summary:"""
             logger.info(f"Generating enhanced AI summary for: {query_hint}")
             
             response = client.models.generate_content(
-                model="gemini-2.0-flash-exp",
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.3,
