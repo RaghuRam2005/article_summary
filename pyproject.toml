@@ -1,0 +1,15 @@
+[project]
+name = "article-summary"
+version = "2.1.0"
+description = "summarizing articles"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.13.5",
+    "cors>=1.0.1",
+    "dotenv>=0.9.9",
+    "flask>=3.1.2",
+    "google-genai>=1.35.0",
+    "newspaper3k>=0.2.8",
+    "trafilatura>=2.0.0",
+]
