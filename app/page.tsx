@@ -7,85 +7,31 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut, User, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { auth, db, BackendUrl } from '@/app/firebase/config';
 import { collection, addDoc, query, onSnapshot, deleteDoc, doc, orderBy } from 'firebase/firestore';
-import { X, Loader2, User as UserIcon, LogOut, Trash2, Send, History, KeyRound, Mail, Menu, SidebarClose } from 'lucide-react';
+import { X, Loader2, User as UserIcon, LogOut, Trash2, Send, History, KeyRound, Mail, Menu, SidebarClose, Link as LinkIcon } from 'lucide-react';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 
-// --- AUTH PAGES ---
+// --- AUTH PAGES --
+interface onNavigate{
+  page: 'signup' | 'login' | 'home';
+}
 
-function SignUpPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'home') => void }) {
-  const [displayName, setName] = useState('');
+function SignUpPage(  onNavigate: onNavigate ){
   const [userEmail, setUserEmail] = useState('');
-  const [userPass, setUserPass] = useState('');
+  const [userPassword, setUserPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSignup = async (e: React.FormEvent) => {
+  function handleLogin(e:React.FormEvent) {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    try {
-      const userCredentials = await createUserWithEmailAndPassword(auth, userEmail, userPass);
-      await updateProfile(userCredentials.user, { displayName });
-      onNavigate('home');
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An Error occurred in firebase');
-      }
-    } finally {
-      setIsLoading(false);
+    try{
     }
-  };
-
-  return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-gray-900 text-white">
-      <div className='absolute top-4 right-4 z-50'>
-        <button onClick={() => onNavigate('home')} className="p-2 rounded-full bg-gray-800 hover:bg-gray-700 cursor-pointer">
-          <X className='h-6 w-6'/>
-        </button>
-      </div>
-      <div className="w-full max-w-md px-4 relative z-10">
-        <h1 className="text-4xl md:text-5xl font-semibold text-center mt-6 relative z-20 py-6 bg-clip-text text-transparent bg-gradient-to-b from-neutral-200 to-neutral-500">
-          Sign Up to Get <Cover>Started</Cover>
-        </h1>
-        <Fieldset className="space-y-6 rounded-xl bg-black/50 p-6 sm:p-10 border border-gray-700">
-          <Field>
-            <Label className="text-sm/6 font-medium text-gray-300">Name</Label>
-            <Input required type='text' placeholder='Enter your name' value={displayName} onChange={e => setName(e.target.value)}
-              className={clsx('mt-3 block w-full rounded-lg border-none bg-gray-800 px-3 py-1.5 text-sm/6 text-white', 'focus:outline-none data-[focus]:outline-2 data-[focus]:-outline-offset-2 data-[focus]:outline-white/25')}
-            />
-          </Field>
-          <Field>
-            <Label className="text-sm/6 font-medium text-gray-300">Email</Label>
-            <Input required type='email' placeholder='Enter your email' value={userEmail} onChange={e => setUserEmail(e.target.value)}
-              className={clsx('mt-3 block w-full rounded-lg border-none bg-gray-800 px-3 py-1.5 text-sm/6 text-white', 'focus:outline-none data-[focus]:outline-2 data-[focus]:-outline-offset-2 data-[focus]:outline-white/25')}
-            />
-          </Field>
-          <Field>
-            <Label className="text-sm/6 font-medium text-gray-300">Password</Label>
-            <Input required type='password' placeholder='Enter your password' value={userPass} onChange={e => setUserPass(e.target.value)}
-              className={clsx('mt-3 block w-full rounded-lg border-none bg-gray-800 px-3 py-1.5 text-sm/6 text-white', 'focus:outline-none data-[focus]:outline-2 data-[focus]:-outline-offset-2 data-[focus]:outline-white/25')}
-            />
-          </Field>
-          {error && <p className='text-red-500 text-sm text-center'>{error}</p>}
-          <div className="flex justify-center">
-            <Button onClick={handleSignup} className="inline-flex items-center gap-2 rounded-md bg-gray-700 px-4 py-2 text-sm/6 font-semibold text-white shadow-inner shadow-white/10 hover:bg-gray-600 data-[focus]:outline-1 data-[focus]:outline-white">
-              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait...</> : 'Sign Up'}
-            </Button>
-          </div>
-          <div className="text-center text-sm text-neutral-400 pt-4">
-            Already have an account?{' '}
-            <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('login'); }} className="font-semibold text-white hover:underline">
-              Login
-            </a>
-          </div>
-        </Fieldset>
-      </div>
-      <BackgroundBeams />
-    </div>
-  );
+  } 
 }
 
 function LoginPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'home') => void }) {
@@ -163,6 +109,12 @@ interface HistoryItem {
   type: 'keyword' | 'url' | 'content';
   timestamp: any;
   response: string;
+  metadata?: {
+      title: string;
+      source_url: string;
+      source_name: string;
+      word_count: number;
+  };
 }
 
 function ProfileModal({ isOpen, setIsOpen, user }: { isOpen: boolean, setIsOpen: (isOpen: boolean) => void, user: User }) {
@@ -353,33 +305,36 @@ function MainContent({ user, activeResult, setActiveResult }: { user: User, acti
 
     setIsLoading(true);
 
-    // Prepare request payload
     const payload: Record<string, string> = {};
     if (type === 'keyword') payload.keyword = query;
     else if (type === 'url') payload.url = query;
     else payload.content = query;
 
     let summary = '';
+    let metadata: HistoryItem['metadata'] | undefined;
+
     try {
       const res = await fetch(`${BackendUrl}/summarize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.status === 'success' && data.summary) {
-      summary = data.summary;
+        summary = data.summary;
+        metadata = data.metadata;
       } else {
-      summary = 'Failed to generate summary.';
+        summary = `Failed to generate summary. ${data.error || ''}`;
       }
     } catch (err) {
       summary = 'Error connecting to backend.';
     }
 
-    const newHistoryItem = {
+    const newHistoryItem: Omit<HistoryItem, 'id'> = {
       query,
       type,
       response: summary,
+      metadata,
       timestamp: new Date(),
     };
 
@@ -411,9 +366,27 @@ function MainContent({ user, activeResult, setActiveResult }: { user: User, acti
             <h3 className="font-semibold text-lg text-gray-300 mb-2">Your Query ({activeResult.type})</h3>
             <p className="text-gray-400 whitespace-pre-wrap break-words">{activeResult.query}</p>
           </div>
-          <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-            <h3 className="font-semibold text-lg text-blue-400 mb-2">Generated Summary</h3>
-            <p className="text-gray-200 whitespace-pre-wrap break-words">{activeResult.response}</p>
+          <div className="bg-gray-900/50 p-6 rounded-lg border border-gray-700">
+            <h3 className="font-semibold text-xl text-blue-400 mb-4">Generated Summary</h3>
+            <article className="prose prose-invert prose-sm md:prose-base max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {activeResult.response}
+                </ReactMarkdown>
+            </article>
+            {activeResult.metadata && (activeResult.metadata.source_url || activeResult.metadata.source_name) && (
+              <div className="mt-6 border-t border-gray-700 pt-4">
+                <h4 className="font-semibold text-lg text-gray-300 mb-2 flex items-center gap-2">
+                  <LinkIcon size={18} /> Sources
+                </h4>
+                {activeResult.metadata.source_url ? (
+                    <a href={activeResult.metadata.source_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">
+                      {activeResult.metadata.source_name || activeResult.metadata.source_url}
+                    </a>
+                ) : (
+                    <p className="text-gray-400">{activeResult.metadata.source_name}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
