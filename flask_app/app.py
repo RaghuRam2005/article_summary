@@ -23,6 +23,10 @@ import re
 import logging
 from typing import Optional, Dict, Any, Union
 
+from db import init_db
+from auth import auth_bp
+from history import history_bp
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -30,12 +34,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask application
-app = Flask(__name__)
-CORS(app)
-
 # Load environment variables from .env file
 load_dotenv()
+
+# Initialize Flask application
+app = Flask(__name__)
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    logger.error("SECRET_KEY environment variable not found")
+    raise ValueError("SECRET_KEY environment variable is required")
+app.secret_key = SECRET_KEY
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+CORS(app, supports_credentials=True, origins=[FRONTEND_ORIGIN])
+
+init_db()
+app.register_blueprint(auth_bp)
+app.register_blueprint(history_bp)
 
 # Initialize Gemini AI client
 GEMINI_API = os.getenv("GEMINI_API")
@@ -379,9 +400,10 @@ if __name__ == "__main__":
     logger.info("Available endpoints:")
     logger.info("  POST /summarize - Generate summary from keyword, URL, or content")
     logger.info("  GET /health - Health check")
-    
+
+    debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(
-        debug=True,
+        debug=debug_mode,
         host="0.0.0.0",
         port=5000
     )

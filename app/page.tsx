@@ -4,16 +4,28 @@ import clsx from 'clsx';
 import { Cover } from '@/app/components/cover';
 import { BackgroundBeams } from '@/app/components/background';
 import React, { useState, useEffect, Fragment } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut, User, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { auth, db, BackendUrl } from '@/app/firebase/config';
-import { collection, addDoc, query, onSnapshot, deleteDoc, doc, orderBy } from 'firebase/firestore';
+import {
+  AppUser as User,
+  BackendUrl,
+  signUp,
+  logIn,
+  logOut,
+  getCurrentUser,
+  updateDisplayName,
+  updateUserEmail,
+  updateUserPassword,
+  listHistory,
+  createHistory,
+  deleteHistoryItem,
+  HistoryEntry,
+} from '@/app/lib/api';
 import { X, Loader2, User as UserIcon, LogOut, Trash2, Send, History, KeyRound, Mail, Menu, SidebarClose } from 'lucide-react';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react';
 
 
 // --- AUTH PAGES ---
 
-function SignUpPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'home') => void }) {
+function SignUpPage({ onNavigate, onAuthSuccess }: { onNavigate: (page: 'signup' | 'login' | 'home') => void, onAuthSuccess: (user: User) => void }) {
   const [displayName, setName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userPass, setUserPass] = useState('');
@@ -25,14 +37,14 @@ function SignUpPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'h
     setError('');
     setIsLoading(true);
     try {
-      const userCredentials = await createUserWithEmailAndPassword(auth, userEmail, userPass);
-      await updateProfile(userCredentials.user, { displayName });
+      const newUser = await signUp(displayName, userEmail, userPass);
+      onAuthSuccess(newUser);
       onNavigate('home');
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('An Error occurred in firebase');
+        setError('An error occurred while signing up');
       }
     } finally {
       setIsLoading(false);
@@ -88,7 +100,7 @@ function SignUpPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'h
   );
 }
 
-function LoginPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'home') => void }) {
+function LoginPage({ onNavigate, onAuthSuccess }: { onNavigate: (page: 'signup' | 'login' | 'home') => void, onAuthSuccess: (user: User) => void }) {
   const [userEmail, setUserEmail] = useState('');
   const [userPass, setUserPass] = useState('');
   const [error, setError] = useState('');
@@ -99,7 +111,8 @@ function LoginPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'ho
     setError('');
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, userEmail, userPass);
+      const loggedInUser = await logIn(userEmail, userPass);
+      onAuthSuccess(loggedInUser);
       onNavigate('home');
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -143,7 +156,7 @@ function LoginPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'ho
             </Button>
           </div>
           <div className="text-center text-sm text-neutral-400 pt-4">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('signup'); }} className="font-semibold text-white hover:underline">
               Sign Up
             </a>
@@ -157,16 +170,10 @@ function LoginPage({ onNavigate }: { onNavigate: (page: 'signup' | 'login' | 'ho
 
 // --- MAIN APP COMPONENTS ---
 
-interface HistoryItem {
-  id: string;
-  query: string;
-  type: 'keyword' | 'url' | 'content';
-  timestamp: any;
-  response: string;
-}
+type HistoryItem = HistoryEntry;
 
-function ProfileModal({ isOpen, setIsOpen, user }: { isOpen: boolean, setIsOpen: (isOpen: boolean) => void, user: User }) {
-  const [displayName, setDisplayName] = useState(user.displayName || '');
+function ProfileModal({ isOpen, setIsOpen, user, onUserUpdate }: { isOpen: boolean, setIsOpen: (isOpen: boolean) => void, user: User, onUserUpdate: (user: User) => void }) {
+  const [displayName, setDisplayName] = useState(user.name || '');
   const [newEmail, setNewEmail] = useState(user.email || '');
   const [newPassword, setNewPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -186,17 +193,16 @@ function ProfileModal({ isOpen, setIsOpen, user }: { isOpen: boolean, setIsOpen:
     }
 
     try {
-        const credential = EmailAuthProvider.credential(user.email!, currentPassword);
-        await reauthenticateWithCredential(user, credential);
-
         if (updateType === 'profile') {
-            await updateProfile(user, { displayName });
+            const updated = await updateDisplayName(displayName);
+            onUserUpdate(updated);
             setSuccess("Display name updated successfully!");
         } else if (updateType === 'email') {
-            await updateEmail(user, newEmail);
+            const updated = await updateUserEmail(newEmail, currentPassword);
+            onUserUpdate(updated);
             setSuccess("Email updated successfully!");
         } else if (updateType === 'password') {
-            await updatePassword(user, newPassword);
+            await updateUserPassword(newPassword, currentPassword);
             setSuccess("Password updated successfully!");
             setNewPassword('');
         }
@@ -280,29 +286,8 @@ function ProfileModal({ isOpen, setIsOpen, user }: { isOpen: boolean, setIsOpen:
 }
 
 
-function Sidebar({ user, onHistorySelect, onLogout, onNavigate }: { user: User, onHistorySelect: (item: HistoryItem) => void, onLogout: () => void, onNavigate: (page: 'signup' | 'login' | 'home') => void }) {
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+function Sidebar({ user, history, onHistorySelect, onHistoryDelete, onLogout, onNavigate, onUserUpdate }: { user: User, history: HistoryItem[], onHistorySelect: (item: HistoryItem) => void, onHistoryDelete: (id: number) => void, onLogout: () => void, onNavigate: (page: 'signup' | 'login' | 'home') => void, onUserUpdate: (user: User) => void }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      const q = query(collection(db, 'history', user.uid, 'queries'), orderBy('timestamp', 'desc'));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const historyData: HistoryItem[] = [];
-        querySnapshot.forEach((doc) => {
-          historyData.push({ id: doc.id, ...doc.data() } as HistoryItem);
-        });
-        setHistory(historyData);
-      });
-      return () => unsubscribe();
-    }
-  }, [user]);
-
-  const handleDelete = async (id: string) => {
-    if (user) {
-      await deleteDoc(doc(db, 'history', user.uid, 'queries', id));
-    }
-  };
 
   return (
     <>
@@ -314,7 +299,7 @@ function Sidebar({ user, onHistorySelect, onLogout, onNavigate }: { user: User, 
           {history.map(item => (
             <div key={item.id} className="p-3 hover:bg-gray-800/50 group flex justify-between items-center cursor-pointer" onClick={() => onHistorySelect(item)}>
               <p className="truncate text-sm">{item.query}</p>
-              <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={(e) => { e.stopPropagation(); onHistoryDelete(item.id); }} className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Trash2 size={16} />
               </button>
             </div>
@@ -322,19 +307,19 @@ function Sidebar({ user, onHistorySelect, onLogout, onNavigate }: { user: User, 
         </div>
         <div className="p-4 border-t border-gray-700 space-y-2">
           <Button onClick={() => setIsProfileOpen(true)} className="w-full flex items-center gap-2 justify-center rounded-md bg-gray-700 px-3 py-2 text-sm/6 font-semibold shadow-inner shadow-white/10 hover:bg-gray-600">
-            <UserIcon size={16} /> {user.displayName || 'Profile'}
+            <UserIcon size={16} /> {user.name || 'Profile'}
           </Button>
           <Button onClick={onLogout} className="w-full flex items-center gap-2 justify-center rounded-md bg-red-800/80 px-3 py-2 text-sm/6 font-semibold shadow-inner shadow-white/10 hover:bg-red-700">
             <LogOut size={16} /> Logout
           </Button>
         </div>
       </div>
-      {user && <ProfileModal isOpen={isProfileOpen} setIsOpen={setIsProfileOpen} user={user} />}
+      {user && <ProfileModal isOpen={isProfileOpen} setIsOpen={setIsProfileOpen} user={user} onUserUpdate={onUserUpdate} />}
     </>
   );
 }
 
-function MainContent({ user, activeResult, setActiveResult }: { user: User, activeResult: HistoryItem | null, setActiveResult: (result: HistoryItem | null) => void }) {
+function MainContent({ user, activeResult, setActiveResult, onHistoryCreated }: { user: User, activeResult: HistoryItem | null, setActiveResult: (result: HistoryItem | null) => void, onHistoryCreated: (item: HistoryItem) => void }) {
   const [inputType, setInputType] = useState(0);
   const [keyword, setKeyword] = useState('');
   const [url, setUrl] = useState('');
@@ -376,18 +361,14 @@ function MainContent({ user, activeResult, setActiveResult }: { user: User, acti
       summary = 'Error connecting to backend.';
     }
 
-    const newHistoryItem = {
-      query,
-      type,
-      response: summary,
-      timestamp: new Date(),
-    };
-
     if (user) {
-      await addDoc(collection(db, 'history', user.uid, 'queries'), newHistoryItem);
+      const created = await createHistory(query, type, summary);
+      onHistoryCreated(created);
+      setActiveResult(created);
+    } else {
+      setActiveResult({ id: 0, query, type, response: summary, timestamp: new Date().toISOString() });
     }
-    
-    setActiveResult({ id: 'new', ...newHistoryItem });
+
     setIsLoading(false);
     setKeyword('');
     setUrl('');
@@ -452,14 +433,32 @@ function MainContent({ user, activeResult, setActiveResult }: { user: User, acti
   );
 }
 
-function HomePage({ user, onLogout, onNavigate }: { user: User, onLogout: () => void, onNavigate: (page: 'signup' | 'login' | 'home') => void }) {
+function HomePage({ user, onLogout, onNavigate, onUserUpdate }: { user: User, onLogout: () => void, onNavigate: (page: 'signup' | 'login' | 'home') => void, onUserUpdate: (user: User) => void }) {
   const [activeResult, setActiveResult] = useState<HistoryItem | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  useEffect(() => {
+    listHistory().then(setHistory).catch(() => setHistory([]));
+  }, []);
 
   const handleHistorySelect = (item: HistoryItem) => {
     setActiveResult(item);
     if(window.innerWidth < 768) {
       setIsSidebarOpen(false);
+    }
+  };
+
+  const handleHistoryCreated = (item: HistoryItem) => {
+    setHistory(prev => [item, ...prev]);
+  };
+
+  const handleHistoryDelete = async (id: number) => {
+    setHistory(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteHistoryItem(id);
+    } catch {
+      listHistory().then(setHistory).catch(() => {});
     }
   };
 
@@ -469,9 +468,9 @@ function HomePage({ user, onLogout, onNavigate }: { user: User, onLogout: () => 
         "translate-x-0": isSidebarOpen,
         "-translate-x-full md:translate-x-0": !isSidebarOpen,
       })}>
-        <Sidebar user={user} onHistorySelect={handleHistorySelect} onLogout={onLogout} onNavigate={onNavigate} />
+        <Sidebar user={user} history={history} onHistorySelect={handleHistorySelect} onHistoryDelete={handleHistoryDelete} onLogout={onLogout} onNavigate={onNavigate} onUserUpdate={onUserUpdate} />
       </div>
-      
+
       <main className="flex-1 flex flex-col relative">
         <div className="absolute top-4 left-4 md:hidden z-50">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-gray-800/50 rounded-md">
@@ -479,7 +478,7 @@ function HomePage({ user, onLogout, onNavigate }: { user: User, onLogout: () => 
           </button>
         </div>
         <div className="flex-1 relative">
-            <MainContent user={user} activeResult={activeResult} setActiveResult={setActiveResult} />
+            <MainContent user={user} activeResult={activeResult} setActiveResult={setActiveResult} onHistoryCreated={handleHistoryCreated} />
             <BackgroundBeams className="z-[-1]"/>
         </div>
       </main>
@@ -495,11 +494,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsLoading(false);
-    });
-    return () => unsubscribe();
+    getCurrentUser()
+      .then(setUser)
+      .finally(() => setIsLoading(false));
   }, []);
 
   const handleNavigate = (newPage: 'signup' | 'login' | 'home') => {
@@ -507,7 +504,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await logOut();
+    setUser(null);
     setPage('home'); // or 'login'
   };
 
@@ -520,15 +518,15 @@ export default function App() {
   }
 
   if (user) {
-    return <HomePage user={user} onLogout={handleLogout} onNavigate={handleNavigate} />;
+    return <HomePage user={user} onLogout={handleLogout} onNavigate={handleNavigate} onUserUpdate={setUser} />;
   }
 
   if (page === 'signup') {
-    return <SignUpPage onNavigate={handleNavigate} />;
+    return <SignUpPage onNavigate={handleNavigate} onAuthSuccess={setUser} />;
   }
-  
+
   if (page === 'login') {
-    return <LoginPage onNavigate={handleNavigate} />;
+    return <LoginPage onNavigate={handleNavigate} onAuthSuccess={setUser} />;
   }
 
   // Default landing page for non-logged-in users

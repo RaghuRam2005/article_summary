@@ -80,6 +80,7 @@ export const SparklesCore = (props: ParticlesProps) => {
                   enable: false,
                   mode: "repulse",
                 },
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tsparticles' InteractivityDetect type only accepts an object here, but the runtime option also accepts a boolean.
                 resize: true as any,
               },
               modes: {
