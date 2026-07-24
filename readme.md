@@ -20,16 +20,17 @@ Or download it and navigate to the folder it is in
 cd article_summary
 ```
 
-### Step 2: Setup the API key
+### Step 2: Setup the API keys
 
-Generate a Gemini API key using the [AI Studio](https://aistudio.google.com/apikey) website.
+Generate a Gemini API key using the [AI Studio](https://aistudio.google.com/apikey) website, and a Tavily API key using the [Tavily](https://app.tavily.com/) website. Tavily is used to search the live web/news for keyword queries and to extract content from JS-heavy pages that a plain scrape can't read.
 
-### Note: This may incur some charges, so please review your API usage and billing details on the AI Studio dashboard
+### Note: These may incur some charges, so please review your API usage and billing details on each provider's dashboard
 
-Create a `.env` file in `flask_app` folder and paste your API key there
+Create a `.env` file in `flask_app` folder and paste your API keys there
 
 ```bash
-GEMINI_API = <your API key>
+GEMINI_API = <your Gemini API key>
+TAVILY_API_KEY = <your Tavily API key>
 ```
 
 ### Step 3: Installing required libraries

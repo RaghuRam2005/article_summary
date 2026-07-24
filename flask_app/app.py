@@ -17,11 +17,11 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import requests
-from bs4 import BeautifulSoup
 import os
 import re
 import logging
-from typing import Optional, Dict, Any, Union
+from urllib.parse import urlparse
+from typing import Optional, Dict, Any, List
 
 from db import init_db
 from auth import auth_bp
@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
+
+# search/scraper read env vars (e.g. TAVILY_API_KEY) at import time, so they
+# must be imported only after load_dotenv() has run
+import search
+import scraper
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -105,6 +110,37 @@ def clean_data(text: str) -> str:
         return ""
 
 
+def _build_multi_source_prompt(prepared_sources: List[Dict[str, Any]], topic_hint: str) -> str:
+    """Build the summarization prompt from multiple labeled, cleaned sources.
+
+    Each source is attributed to its domain and the model is explicitly
+    instructed to synthesize a neutral view and flag disagreement rather than
+    adopt any single source's framing -- the prompt-level half of the app's
+    bias-mitigation approach (the other half is the domain-diversity cap
+    applied in RAGProcessor.gather_keyword_sources)."""
+    source_blocks = "\n\n".join(
+        f"[Source {s['index']} - {s['domain']}]\n{s['text']}"
+        for s in prepared_sources
+    )
+    return f"""Summarize the following information about '{topic_hint}', gathered from {len(prepared_sources)} different source(s).
+
+Each source below is labeled with the domain it came from. Sources may disagree with each other or frame the topic differently.
+
+Instructions:
+- Write a neutral, balanced summary that synthesizes the facts common across sources.
+- Do not adopt the tone, framing, or conclusions of any single source as though it were the only viewpoint.
+- If sources disagree on facts, figures, or framing, briefly note the disagreement (e.g. "some sources report X, while others report Y") instead of silently picking one side.
+- If a claim appears in only one source and seems one-sided, attribute it to that source rather than stating it as settled fact.
+- Do not use any markdown formatting (like *, #, or lists).
+- The summary should be 2-3 paragraphs, around 500 words, and must not exceed this limit.
+
+Sources:
+---
+{source_blocks}
+---
+"""
+
+
 class RAGProcessor:
     """
     This class handles retrieving content from multiple sources (Wikipedia, DuckDuckGo, URLs)
@@ -121,48 +157,20 @@ class RAGProcessor:
     ## Method to scrape content from the url
     def scrape_url_content(self, url: str, timeout: int = 15) -> Optional[str]:
         """
-        Scrape the main textual content from a given URL.
-        
+        Extract the main textual content from a given URL.
+
+        Delegates to scraper.scrape_one, which tries a static fetch, then
+        structured-data/tag extraction, then falls back to Tavily's /extract
+        API for pages that turn out to be JS-rendered shells.
+
         Args:
             url (str): The URL to scrape.
             timeout (int, optional): Request timeout in seconds. Defaults to 15.
-            
+
         Returns:
             Optional[str]: The extracted text content, or None on failure.
         """
-        try:
-            logger.info(f"Scraping content from URL: {url}")
-            response = self.session.get(url, timeout=timeout)
-            response.raise_for_status()
-
-            # Use BeautifulSoup to parse the HTML
-            soup = BeautifulSoup(response.content, 'html.parser')
-
-            # Remove script and style elements
-            for script_or_style in soup(['script', 'style']):
-                script_or_style.decompose()
-
-            # Get text from common article tags, prioritize <article>
-            if soup.article:
-                text = soup.article.get_text()
-            else:
-                # Fallback to a combination of other common tags
-                tags = soup.find_all(['p', 'h1', 'h2', 'h3'])
-                text = '\n'.join(tag.get_text() for tag in tags)
-
-            if not text:
-                # If no text found with specific tags, get all visible text
-                text = soup.get_text()
-
-            logger.info(f"Successfully scraped content, length: {len(text)}")
-            return text
-
-        except requests.RequestException as e:
-            logger.error(f"HTTP error during URL scraping for {url}: {str(e)}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error during URL scraping for {url}: {str(e)}")
-            return None
+        return scraper.scrape_one(url, timeout=timeout).get("text")
 
     def search_wikipedia(self, keyword: str, timeout: int = 10) -> Optional[str]:
         """Search Wikipedia for content related to the given keyword."""
@@ -214,7 +222,9 @@ class RAGProcessor:
             return None
 
     def _get_content_from_keyword(self, keyword: str) -> str:
-        """Helper to retrieve content by searching a keyword."""
+        """Legacy helper to retrieve content by searching a keyword via
+        Wikipedia/DuckDuckGo. Kept as the fallback path for gather_keyword_sources
+        when Tavily returns no results (e.g. API outage or rate limit)."""
         raw_content = ""
         # Try Wikipedia first
         raw_content = self.search_wikipedia(keyword)
@@ -225,38 +235,74 @@ class RAGProcessor:
                 raw_content = ddg_result.get('extract', '')
         return raw_content or ""
 
-    def generate_summary(self, source_text: str, topic_hint: str) -> str:
+    def gather_keyword_sources(self, keyword: str) -> List[Dict[str, Any]]:
         """
-        Generates an AI summary for the given text.
+        Retrieve multiple, domain-diverse sources for a keyword query.
 
-        ## Enhancement: This method now focuses only on AI generation with an improved prompt.
-        
+        Uses Tavily's real web/news search so current events resolve, then caps
+        how many results come from the same domain (the bias-mitigation lever)
+        before handing the content straight to the summarizer -- Tavily already
+        fetched/extracted each result server-side, so no scraping happens here.
+
+        Falls back to the legacy Wikipedia/DuckDuckGo lookup (as a single
+        source) if Tavily returns nothing.
+
+        Returns a list of {"url", "domain", "title", "text"} dicts.
+        """
+        results = search.tavily_search(keyword)
+        if not results:
+            logger.warning(f"Tavily returned no results for '{keyword}', falling back to legacy search.")
+            legacy_content = self._get_content_from_keyword(keyword)
+            if not legacy_content:
+                return []
+            return [{"url": None, "domain": "wikipedia/duckduckgo", "title": keyword, "text": legacy_content}]
+
+        diverse_results = search.select_diverse_results(results)
+        sources = []
+        for result in diverse_results:
+            text = result.get("raw_content") or result.get("content") or ""
+            if len(text.strip()) >= 50:
+                sources.append({
+                    "url": result.get("url"),
+                    "domain": result.get("domain"),
+                    "title": result.get("title"),
+                    "text": text,
+                })
+        return sources
+
+    def generate_summary(self, sources: List[Dict[str, Any]], topic_hint: str) -> str:
+        """
+        Generates an AI summary synthesized across one or more sources.
+
         Args:
-            source_text (str): The text content to be summarized.
+            sources (List[Dict[str, Any]]): Each dict has at least a "text" key
+                and, when known, a "domain" key used to attribute claims in the
+                prompt so the model doesn't adopt a single source's framing.
             topic_hint (str): A hint about the topic (e.g., the keyword or URL).
 
         Returns:
             str: The generated summary or a fallback message.
         """
-        cleaned_content = clean_data(source_text)
-        
-        if not cleaned_content or len(cleaned_content.strip()) < 50:
+        prepared_sources = []
+        for source in sources:
+            cleaned = clean_data(source.get("text", ""))
+            if cleaned and len(cleaned.strip()) >= 50:
+                prepared_sources.append({
+                    "domain": source.get("domain") or "user-provided",
+                    "text": cleaned[:4000],
+                })
+
+        if not prepared_sources:
             logger.warning(f"Content for '{topic_hint}' is too short after cleaning.")
             return f"Sorry, the provided content for '{topic_hint}' was not substantial enough to summarize."
 
-        try:
-            logger.info(f"Generating AI summary for topic: {topic_hint}")
-            prompt = f"""Summarize the following content about '{topic_hint}'.
-            Provide a clear, professional, and concise summary in well-structured plain text.
-            Do not use any markdown formatting (like *, #, or lists).
-            Focus on the key facts and main points. The summary should be 2-3 paragraphs long, around 500 words (don't exceede this limit).
+        for index, source in enumerate(prepared_sources, start=1):
+            source["index"] = index
 
-            Content to summarize:
-            ---
-            {cleaned_content}
-            ---
-            """
-            
+        try:
+            logger.info(f"Generating AI summary for topic: {topic_hint} from {len(prepared_sources)} source(s)")
+            prompt = _build_multi_source_prompt(prepared_sources, topic_hint)
+
             response = client.models.generate_content(
                 model="gemini-2.0-flash-exp",
                 contents=prompt,
@@ -265,16 +311,16 @@ class RAGProcessor:
                     temperature=0.3,
                 )
             )
-            
+
             if response and hasattr(response, 'text') and response.text:
                 summary = clean_data(response.text)
                 if summary:
                     logger.info(f"Successfully generated summary for: {topic_hint}")
                     return summary
-            
+
             logger.warning("AI generated an empty or invalid summary.")
-            # Fallback if AI fails
-            return cleaned_content
+            # Fallback if AI fails: return the first source's cleaned text
+            return prepared_sources[0]["text"]
 
         except Exception as e:
             logger.error(f"Error generating summary with AI model: {str(e)}")
@@ -312,13 +358,13 @@ def summarize_content():
         if not data:
             return jsonify({"error": "No JSON data provided", "status": "error"}), 400
 
-        content_to_summarize = ""
+        sources: list = []
         source_identifier = ""
 
         # 1. Prioritize direct content
         if 'content' in data and isinstance(data['content'], str) and data['content'].strip():
-            content_to_summarize = data['content']
             source_identifier = "direct content"
+            sources = [{"url": None, "domain": "user-provided", "title": None, "text": data['content']}]
             logger.info("Processing request with direct content.")
 
         # 2. Else, check for URL
@@ -327,11 +373,12 @@ def summarize_content():
             # Basic URL validation
             if not re.match(r'^https?://', url):
                 return jsonify({"error": "Invalid URL format provided", "status": "error"}), 400
-            
+
             source_identifier = url
             content_to_summarize = rag_processor.scrape_url_content(url)
             if not content_to_summarize:
                 return jsonify({"error": f"Failed to retrieve content from URL: {url}", "status": "error"}), 400
+            sources = [{"url": url, "domain": urlparse(url).netloc, "title": None, "text": content_to_summarize}]
             logger.info(f"Processing request with URL: {url}")
 
         # 3. Else, fall back to keyword
@@ -339,12 +386,12 @@ def summarize_content():
             keyword = data['keyword'].strip()
             if len(keyword) > 200:
                 return jsonify({"error": "Keyword is too long (max 200 chars)", "status": "error"}), 400
-            
+
             source_identifier = keyword
-            content_to_summarize = rag_processor._get_content_from_keyword(keyword)
-            if not content_to_summarize:
+            sources = rag_processor.gather_keyword_sources(keyword)
+            if not sources:
                  return jsonify({"error": f"Could not find any information for the keyword: '{keyword}'", "status": "error"}), 404
-            logger.info(f"Processing request with keyword: {keyword}")
+            logger.info(f"Processing request with keyword: {keyword} ({len(sources)} source(s))")
 
         # If no valid input was found
         else:
@@ -353,15 +400,16 @@ def summarize_content():
                 "status": "error"
             }), 400
 
-        # Generate summary from the obtained content
-        summary = rag_processor.generate_summary(content_to_summarize, source_identifier)
-        
+        # Generate summary from the obtained source(s)
+        summary = rag_processor.generate_summary(sources, source_identifier)
+
         response_data = {
             "source": source_identifier,
             "summary": summary,
+            "sources": [{"url": s["url"], "domain": s["domain"]} for s in sources],
             "status": "success"
         }
-        
+
         return jsonify(response_data), 200
         
     except Exception as e:
